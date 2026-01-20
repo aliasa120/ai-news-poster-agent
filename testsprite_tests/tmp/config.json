@@ -1,0 +1,16 @@
+{
+  "status": "commited",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000/agent",
+  "executionArgs": {
+    "projectName": "my-app",
+    "projectPath": "c:\\Users\\kashif\\Desktop\\agent\\my-app",
+    "testIds": [],
+    "additionalInstruction": "Focus on testing the Agent page functionality including Start Agent button, settings selectors (Model, Batch, Order), automation toggle, preview queue button, and the Posts page with social media preview tabs and delete functionality.",
+    "envs": {
+      "API_KEY": "sk-user-7t-tj1CwcLMLfpnaZTogFCvjSOmEvsRgxszB9UaMICW0FePVvoUzEVe4ZIjmwm-ZKtjpy_uR30PmpRJJzqeMSKzeWYy92iOiZpQbwZTNZD2jrQklgV-v5qVYiuSm6Z9IwzY"
+    }
+  },
+  "proxy": "http://5500ed5a-1f9e-413d-8378-eb64474788f0:Oo774yLjto3xBXc8il5TU6D80ZhkjtTE@tun.testsprite.com:8080"
+}

@@ -1,0 +1,368 @@
+[
+  {
+    "id": "TC001",
+    "title": "RSS Feed News Fetch with Freshness Filtering",
+    "description": "Verify that the system fetches news articles from the Pakistan-specific Google News RSS feed and applies freshness filtering correctly based on configured hours (1h to 24h).",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Configure freshness filter to 1 hour in Feeder settings UI."
+      },
+      {
+        "type": "action",
+        "description": "Trigger a manual news refresh from the Feeder UI."
+      },
+      {
+        "type": "assertion",
+        "description": "Check that only news articles published within the last hour are fetched and stored in the database."
+      },
+      {
+        "type": "action",
+        "description": "Change freshness filter to 24 hours and trigger manual refresh."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that news articles published within the last 24 hours are fetched and stored."
+      }
+    ]
+  },
+  {
+    "id": "TC002",
+    "title": "News Article Deduplication by SHA-256 Hash",
+    "description": "Verify that duplicate news articles are detected and excluded based on SHA-256 hash of normalized title and source name.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Inject two news articles with identical normalized title and source but different IDs into the RSS feed mock."
+      },
+      {
+        "type": "action",
+        "description": "Trigger news refresh in Feeder."
+      },
+      {
+        "type": "assertion",
+        "description": "Check database contains only one instance of the duplicate article based on the SHA-256 hash."
+      }
+    ]
+  },
+  {
+    "id": "TC003",
+    "title": "Auto-Refresh Timer Triggers News Fetch",
+    "description": "Verify that the auto-refresh timer triggers news fetching at user-selected intervals (5 minutes to 1 hour) and honors active/inactive toggle status.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Set auto-refresh interval to 5 minutes and enable it in Feeder settings."
+      },
+      {
+        "type": "assertion",
+        "description": "Wait for 6 minutes and verify that a news fetch operation is triggered automatically."
+      },
+      {
+        "type": "action",
+        "description": "Disable auto-refresh timer."
+      },
+      {
+        "type": "assertion",
+        "description": "Ensure no automatic news fetches occur within the following 10 minutes."
+      }
+    ]
+  },
+  {
+    "id": "TC004",
+    "title": "AI Agent Processing with Tiered Tool Usage",
+    "description": "Verify that the agent processing applies the 4-tiered tool usage system correctly and falls back appropriately on tool failures.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Provide a batch of articles covering simple to complex content to the agent processing queue."
+      },
+      {
+        "type": "action",
+        "description": "Manually start agent run and monitor processing."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm generated posts use zero tools for simplest tier articles."
+      },
+      {
+        "type": "assertion",
+        "description": "Validate posts using one or multiple tools for complex articles."
+      },
+      {
+        "type": "action",
+        "description": "Introduce a mock failure in Serper API tool during processing."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm agent falls back to alternative tools or fallback content generation without crashing."
+      }
+    ]
+  },
+  {
+    "id": "TC005",
+    "title": "Generated Social Media Posts Follow Platform-Specific Constraints",
+    "description": "Verify generated posts comply with character limits, formatting (hashtags, emojis), and engagement questions specific to X, Instagram, and Facebook.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Generate social media posts for all three platforms via the AI agent."
+      },
+      {
+        "type": "assertion",
+        "description": "Validate that X posts do not exceed 280 characters and include hashtags."
+      },
+      {
+        "type": "assertion",
+        "description": "Validate Instagram posts format includes line breaks and emojis."
+      },
+      {
+        "type": "assertion",
+        "description": "Validate Facebook posts include engagement questions and correct formatting."
+      }
+    ]
+  },
+  {
+    "id": "TC006",
+    "title": "Real-Time Activity Log Streaming Accuracy",
+    "description": "Verify that detailed agent activity and processing status are streamed live to the UI with all tool calls and state changes correctly reflected.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Start an agent processing run."
+      },
+      {
+        "type": "assertion",
+        "description": "Observe real-time UI activity log and verify entries correspond to actual processing steps including calls to Groq LLM, Jina AI, Serper API, and Pinecone."
+      },
+      {
+        "type": "action",
+        "description": "Simulate a tool failure during processing."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm the failure and fallback events appear in the activity log in real-time."
+      }
+    ]
+  },
+  {
+    "id": "TC007",
+    "title": "Agent Auto-Run Timer Functionality and Countdown Display",
+    "description": "Verify the agent automation timer allows interval selection between 15 minutes and 4 hours, displays countdown UI correctly, and triggers agent start automatically.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Set auto-run timer to 15 minutes and enable it."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify countdown timer UI shows correct remaining time."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm agent processing automatically starts when countdown expires."
+      },
+      {
+        "type": "action",
+        "description": "Change interval to 4 hours and verify countdown updates accordingly."
+      }
+    ]
+  },
+  {
+    "id": "TC008",
+    "title": "Posts Management UI: Viewing, One-Click Copy, and Bulk Delete",
+    "description": "Validate the posts management UI supports platform-specific preview cards and allows users to copy posts with one click and bulk delete with confirmation modal.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Open the Posts UI and view generated posts for X, Instagram, and Facebook."
+      },
+      {
+        "type": "assertion",
+        "description": "Ensure preview cards match expected platform style and content."
+      },
+      {
+        "type": "action",
+        "description": "Perform a one-click copy on a post and verify clipboard content matches post text."
+      },
+      {
+        "type": "action",
+        "description": "Select multiple posts and initiate bulk delete."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm that a confirmation modal appears before deletion."
+      },
+      {
+        "type": "action",
+        "description": "Confirm the delete action and verify posts are removed from UI and database."
+      }
+    ]
+  },
+  {
+    "id": "TC009",
+    "title": "Feeder and Agent Settings Edit and Persistence",
+    "description": "Verify that edits made to feeder and agent settings via UI components persist correctly in the backend and reflect in UI and behavior.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Change feeder refresh interval, freshness hours, and retention limit via settings UI."
+      },
+      {
+        "type": "assertion",
+        "description": "Check API response confirms settings saved."
+      },
+      {
+        "type": "assertion",
+        "description": "Reload page and verify new settings are displayed."
+      },
+      {
+        "type": "action",
+        "description": "Modify agent auto-run timer interval and enable status."
+      },
+      {
+        "type": "assertion",
+        "description": "Ensure modifications persist and affect agent behavior accordingly."
+      }
+    ]
+  },
+  {
+    "id": "TC010",
+    "title": "Theme Toggle Between Dark and Light Modes",
+    "description": "Verify that dark/light mode toggle accurately switches themes and that UI components adjust styling accordingly.",
+    "category": "ui",
+    "priority": "Low",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Toggle theme switch to dark mode."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify UI switches to dark theme styling including background and text colors."
+      },
+      {
+        "type": "action",
+        "description": "Toggle theme switch back to light mode."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify UI returns to light theme styling."
+      }
+    ]
+  },
+  {
+    "id": "TC011",
+    "title": "Database Atomic Updates for News Items and Agent Queue",
+    "description": "Verify that updates to database tables such as news_items, agent_queue, and agent_runs are atomic and consistent with the UI state during operations.",
+    "category": "functional",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Trigger a news refresh and agent run simultaneously."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify no partial or corrupted records exist in news_items, agent_queue, and runs tables."
+      },
+      {
+        "type": "assertion",
+        "description": "Check UI data matches database state accurately."
+      }
+    ]
+  },
+  {
+    "id": "TC012",
+    "title": "API Endpoints Handle Success and Error States Gracefully",
+    "description": "Verify that all API endpoints for fetching, updating settings, controlling agent, and post management return correct success statuses and handle common error situations properly.",
+    "category": "error handling",
+    "priority": "High",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Send valid requests to all relevant API endpoints and verify success responses."
+      },
+      {
+        "type": "action",
+        "description": "Send invalid requests with missing or malformed parameters."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify error responses with appropriate status codes and descriptive error messages."
+      },
+      {
+        "type": "action",
+        "description": "Simulate backend database unavailability."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm APIs return appropriate error responses without crashing."
+      }
+    ]
+  },
+  {
+    "id": "TC013",
+    "title": "Agent Start and Cancel Controls Functionality",
+    "description": "Verify that the UI controls to manually start and cancel agent runs work as expected and system handles cancellation gracefully.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Manually start an agent run."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify run begins and activity logs update accordingly."
+      },
+      {
+        "type": "action",
+        "description": "Click cancel during ongoing agent run."
+      },
+      {
+        "type": "assertion",
+        "description": "Confirm run is stopped, activity log indicates cancellation, and no partial posts are created."
+      }
+    ]
+  },
+  {
+    "id": "TC014",
+    "title": "Retention Limit Enforcement for News Articles",
+    "description": "Verify that the system enforces retention limits on the number of stored news articles (50 to 500) by purging oldest entries as needed.",
+    "category": "functional",
+    "priority": "Medium",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Set retention limit to 50 articles."
+      },
+      {
+        "type": "action",
+        "description": "Simulate fetching more than 60 new articles."
+      },
+      {
+        "type": "assertion",
+        "description": "Verify that only the latest 50 articles remain in the database."
+      }
+    ]
+  }
+]

@@ -1,0 +1,86 @@
+{
+    "tech_stack": [
+        "TypeScript",
+        "Next.js 14",
+        "React 18",
+        "Tailwind CSS",
+        "Shadcn/ui",
+        "Supabase (PostgreSQL)",
+        "Groq LLM",
+        "Pinecone Vector DB",
+        "Jina AI",
+        "Serper API"
+    ],
+    "features": [
+        {
+            "name": "News Feeder",
+            "description": "Fetches Pakistan news from Google News RSS, handles deduplication, auto-refresh, freshness filtering, and retention limits",
+            "files": [
+                "app/feeder/page.tsx",
+                "app/feeder/components/FeedList.tsx",
+                "app/feeder/components/FeedSettings.tsx",
+                "app/feeder/components/FetchHistory.tsx",
+                "app/api/feeder/route.ts",
+                "app/api/feeder/settings/route.ts",
+                "lib/feed-store.ts",
+                "lib/rss-parser.ts",
+                "lib/deduplication.ts"
+            ]
+        },
+        {
+            "name": "AI Agent",
+            "description": "Processes news articles through Groq LLM with tool augmentation (Jina, Serper, Pinecone) to generate social media posts",
+            "files": [
+                "app/agent/page.tsx",
+                "app/api/agent/route.ts",
+                "lib/agent/index.ts",
+                "lib/agent/store.ts",
+                "lib/agent/types.ts",
+                "lib/agent/tools/langchain-tools.ts",
+                "lib/agent/tools/jina-reader.ts",
+                "lib/agent/tools/serper-search.ts"
+            ]
+        },
+        {
+            "name": "Posts Management",
+            "description": "Displays generated social media posts with platform-specific preview cards (X, Instagram, Facebook) and delete functionality",
+            "files": [
+                "app/posts/page.tsx",
+                "app/api/posts/route.ts"
+            ]
+        },
+        {
+            "name": "Agent Automation",
+            "description": "Auto-run timer with countdown, interval selection (15m-4h), and preview queue showing upcoming articles",
+            "files": [
+                "app/agent/page.tsx"
+            ]
+        },
+        {
+            "name": "Theme Toggle",
+            "description": "Dark/light mode toggle using next-themes",
+            "files": [
+                "components/theme-toggle.tsx",
+                "components/theme-provider.tsx"
+            ]
+        },
+        {
+            "name": "Supabase Integration",
+            "description": "Database client for PostgreSQL operations",
+            "files": [
+                "lib/supabase.ts"
+            ]
+        },
+        {
+            "name": "UI Components",
+            "description": "Shadcn/ui components including Card, Button, Select, Badge, Switch",
+            "files": [
+                "components/ui/card.tsx",
+                "components/ui/button.tsx",
+                "components/ui/select.tsx",
+                "components/ui/badge.tsx",
+                "components/ui/switch.tsx"
+            ]
+        }
+    ]
+}
