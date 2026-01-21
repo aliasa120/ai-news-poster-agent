@@ -37,6 +37,58 @@ export async function getProcessedHashes(): Promise<{ hashes: Set<string>; title
 }
 
 /**
+ * Save a SEEN hash (called immediately when article is fetched)
+ * This persists even after article is deleted by retention limit
+ * Prevents same article from reappearing after retention cleanup
+ */
+export async function saveSeenHash(hash: string, title: string): Promise<void> {
+    const titleNormalized = normalizeTitle(title);
+
+    const { error } = await supabase
+        .from('processed_hashes')
+        .upsert({
+            hash,
+            title,
+            title_normalized: titleNormalized,
+            processed_at: new Date().toISOString(),  // Use processed_at for compatibility
+        }, {
+            onConflict: 'hash',
+            ignoreDuplicates: true,
+        });
+
+    if (error) {
+        console.error('[Feeder] Error saving seen hash:', error);
+    }
+}
+
+/**
+ * Save multiple seen hashes in batch (more efficient)
+ */
+export async function saveSeenHashes(items: { hash: string; title: string }[]): Promise<void> {
+    if (items.length === 0) return;
+
+    const records = items.map(item => ({
+        hash: item.hash,
+        title: item.title,
+        title_normalized: normalizeTitle(item.title),
+        processed_at: new Date().toISOString(),  // Use processed_at for compatibility
+    }));
+
+    const { error } = await supabase
+        .from('processed_hashes')
+        .upsert(records, {
+            onConflict: 'hash',
+            ignoreDuplicates: true,
+        });
+
+    if (error) {
+        console.error('[Feeder] Error saving seen hashes:', error);
+    } else {
+        console.log(`[Feeder] Saved ${items.length} seen hashes for future deduplication`);
+    }
+}
+
+/**
  * Save a processed hash (called when article is marked as posted)
  */
 export async function saveProcessedHash(hash: string, title: string): Promise<void> {
@@ -61,23 +113,37 @@ export async function saveProcessedHash(hash: string, title: string): Promise<vo
 
 /**
  * Check if an article is a duplicate (by hash or similar title)
+ * Layer 1: Exact hash match
+ * Layer 2: Fuzzy title matching (catches same story from different sources)
  */
 export function isDuplicateArticle(
     item: NewsItem,
     processedHashes: Set<string>,
     processedTitles: Set<string>,
-    existingHashes: Set<string>
+    existingHashes: Set<string>,
+    existingTitlesArray?: string[]  // New: array of titles for fuzzy matching
 ): boolean {
-    // Check exact hash match
+    // Layer 1: Check exact hash match
     if (item.hash && (processedHashes.has(item.hash) || existingHashes.has(item.hash))) {
         return true;
     }
 
-    // Check normalized title match (catches same news from different sources)
+    // Layer 2A: Check exact normalized title match
     const normalizedTitle = normalizeTitle(item.title);
     if (processedTitles.has(normalizedTitle)) {
-        console.log(`[Feeder] Skipping duplicate by title: "${item.title.substring(0, 50)}..."`);
+        console.log(`[Feeder] Skipping duplicate by exact title: "${item.title.substring(0, 50)}..."`);
         return true;
+    }
+
+    // Layer 2B: Fuzzy title matching (uses synonyms and Jaccard similarity)
+    if (existingTitlesArray && existingTitlesArray.length > 0) {
+        // Import dynamically to avoid circular dependency
+        const { findSimilarTitle } = require('./deduplication');
+        const similarTitle = findSimilarTitle(item.title, existingTitlesArray, 0.6);
+        if (similarTitle) {
+            console.log(`[Feeder] Skipping duplicate by fuzzy match: "${item.title.substring(0, 50)}..."`);
+            return true;
+        }
     }
 
     return false;
@@ -97,6 +163,23 @@ export async function getExistingHashes(): Promise<Set<string>> {
     }
 
     return new Set(data?.map((item) => item.hash) || []);
+}
+
+/**
+ * Get all existing news titles for fuzzy deduplication
+ * Returns an array (not Set) because we need to iterate for similarity check
+ */
+export async function getExistingTitles(): Promise<string[]> {
+    const { data, error } = await supabase
+        .from('news_items')
+        .select('title');
+
+    if (error) {
+        console.error('Error fetching titles:', error);
+        return [];
+    }
+
+    return data?.map((item) => item.title).filter(Boolean) || [];
 }
 
 /**
@@ -364,15 +447,16 @@ export async function deleteProcessedItems(): Promise<number> {
 
 /**
  * Enforce retention limit - keep only the latest X unprocessed articles
- * Deletes oldest unprocessed articles beyond the limit
+ * Uses pub_date to keep the most RECENTLY PUBLISHED articles (not fetched)
+ * This ensures newer articles replace older ones, not the other way around
  */
 export async function enforceRetentionLimit(maxRetention: number): Promise<number> {
-    // Get IDs of articles to keep (latest X unprocessed)
+    // Get IDs of articles to keep (latest X unprocessed by PUBLICATION date)
     const { data: keepItems } = await supabase
         .from('news_items')
         .select('id')
         .eq('is_posted', false)
-        .order('fetched_at', { ascending: false })
+        .order('pub_date', { ascending: false })  // Changed from fetched_at to pub_date
         .limit(maxRetention);
 
     const keepIds = keepItems?.map(item => item.id) || [];
@@ -388,7 +472,7 @@ export async function enforceRetentionLimit(maxRetention: number): Promise<numbe
     const toDelete = (totalUnprocessed || 0) - keepIds.length;
     if (toDelete <= 0) return 0;
 
-    // Delete unprocessed items NOT in the keep list
+    // Delete unprocessed items NOT in the keep list (oldest by pub_date)
     const { error } = await supabase
         .from('news_items')
         .delete()

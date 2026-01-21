@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "fetch_news_with_freshness_filtering",
+    "description": "Test the API endpoint responsible for fetching news articles from the Pakistan Google News RSS feed. Verify that the freshness filtering is correctly applied based on the configured hours (1h to 24h) and that only fresh news articles are returned."
+  },
+  {
+    "id": "TC002",
+    "title": "deduplicate_news_articles_by_hash",
+    "description": "Test the news fetching API to ensure that duplicate news articles are identified and excluded based on the SHA-256 hash of the normalized title and source name, preventing duplicate entries in the database."
+  },
+  {
+    "id": "TC003",
+    "title": "auto_refresh_news_fetch_trigger",
+    "description": "Verify that the auto-refresh timer triggers the news fetching API at user-selected intervals (5 minutes to 1 hour) and respects the active/inactive status of the auto-refresh setting."
+  },
+  {
+    "id": "TC004",
+    "title": "agent_processing_with_tiered_tool_usage",
+    "description": "Test the AI agent processing API to ensure it correctly applies the 4-tiered logic for generating social media posts using zero, one, or multiple tools (Jina AI, Serper API, Pinecone vector DB) and properly falls back on failures."
+  },
+  {
+    "id": "TC005",
+    "title": "generate_platform_specific_social_media_posts",
+    "description": "Verify that the generated social media posts from the agent processing API meet platform-specific character limits and format requirements, including hashtags, emojis, and engagement questions for X, Instagram, and Facebook."
+  },
+  {
+    "id": "TC006",
+    "title": "stream_real_time_activity_logs",
+    "description": "Test the API endpoint that streams real-time activity logs during agent runs to ensure accurate and timely updates reflecting all tool calls and processing states are sent to the UI."
+  },
+  {
+    "id": "TC007",
+    "title": "auto_run_timer_functionality",
+    "description": "Verify the auto-run timer API correctly accepts interval selections ranging from 15 minutes to 4 hours, displays countdowns, and triggers the agent start process as configured."
+  },
+  {
+    "id": "TC008",
+    "title": "posts_management_view_copy_and_bulk_delete",
+    "description": "Test the posts management API to ensure users can view generated posts with platform-specific preview cards, perform one-click copy of post content, and execute bulk deletion with confirmation modal successfully."
+  },
+  {
+    "id": "TC009",
+    "title": "database_updates_reflect_ui_state",
+    "description": "Verify that API endpoints handling database updates for news_items, agent_queue, agent_runs, and feeder_settings perform atomic operations and that the UI state accurately reflects these changes."
+  },
+  {
+    "id": "TC010",
+    "title": "api_response_success_and_error_handling",
+    "description": "Test all API endpoints to ensure they respond with correct success status codes and handle error states gracefully, providing meaningful error messages to the frontend."
+  }
+]

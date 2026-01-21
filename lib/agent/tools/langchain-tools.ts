@@ -28,11 +28,18 @@ export function getScrapingProvider(): ScrapingProvider {
  */
 export const jinaReaderTool = new DynamicStructuredTool({
     name: 'read_article',
-    description: `Read full article content from URL. Uses multi-scraper with rate limiting.
-- Jina Free: 20 req/min (auto-waits when limit reached)
-- Jina API: 200 req/min (if API key set)
-- Exa AI: Fallback option
-Use ONLY when snippet has less than 100 chars or missing key facts.`,
+    description: `Read full article content from a URL. TIER 2 tool.
+
+WHEN TO USE:
+- Snippet has < 100 characters
+- Title is vague like "Minister announces policy"
+- Missing key facts: numbers, dates, quotes, names
+
+WHEN NOT TO USE:
+- You already have enough info from snippet (use TIER 1)
+- You need multiple perspectives (use search_web instead)
+
+RETURNS: Full article text (up to 10,000 chars)`,
     schema: z.object({
         url: z.string().describe('The article URL'),
     }),
@@ -59,56 +66,177 @@ Use ONLY when snippet has less than 100 chars or missing key facts.`,
 });
 
 /**
- * Web Search Tool - Search for verification/context
+ * Web Search Tool - Search + Read ALL articles in PARALLEL
  * TIER 3: Use for breaking news or unclear content
- * Now uses multi-search (Serper or SearXNG based on settings)
+ * 
+ * NEW BEHAVIOR:
+ * 1. Searches Google with your query
+ * 2. Gets top 3 results
+ * 3. Reads ALL 3 articles in PARALLEL via Jina AI (Promise.all)
+ * 4. Returns combined full content from all sources
+ * 
+ * This is more efficient than calling read_article 3 times sequentially!
  */
 export const serperSearchTool = new DynamicStructuredTool({
     name: 'search_web',
-    description: `Search Google for verification. Use ONLY when:
-- Breaking news needs multiple source confirmation
-- Article content is unclear after reading
-- Cannot verify facts from article alone
-Returns top 3 results. EXPENSIVE - use sparingly.`,
+    description: `Search Google AND read top 3 articles in PARALLEL. TIER 3 tool - VERY POWERFUL!
+
+WHEN TO USE:
+- Need to VERIFY breaking news from multiple sources
+- Source credibility is questionable
+- Need additional context or background
+- Controversial claims need fact-checking
+
+⚠️ QUERY FORMULATION:
+- GOOD: "Pakistan GDP growth rate 2026" (specific question)
+- GOOD: "PTI rally Lahore January details" (specific event)
+- BAD: "PM announces economic package" (copies title - don't do this!)
+- BAD: "What is happening?" (too vague)
+
+RETURNS: Full content from 3 different sources (8000 chars each).
+No need to call read_article after - this tool already reads articles!`,
     schema: z.object({
-        query: z.string().describe('Search query - be specific'),
+        query: z.string().describe('Specific search query - ask a QUESTION, do NOT copy the article title'),
     }),
     func: async ({ query }) => {
-        console.log(`[Tool] search_web`);
-        console.log(`[Tool] Search: ${query}`);
-        const result = await multiSearch(query, 3);
-        if (!result.success) return `Error: ${result.error}`;
-        if (!result.results?.length) return 'No results found.';
+        console.log(`[Tool] search_web: "${query}"`);
 
-        return result.results
-            .map((r, i) => `${i + 1}. ${r.title}\n   ${r.snippet}\n   URL: ${r.link}`)
-            .join('\n\n');
+        // Step 1: Search Google
+        console.log(`[Tool] Step 1: Searching Google...`);
+        const searchResult = await multiSearch(query, 3);
+
+        if (!searchResult.success) {
+            return `Search Error: ${searchResult.error}`;
+        }
+        if (!searchResult.results?.length) {
+            return 'No search results found.';
+        }
+
+        const urls = searchResult.results.map(r => r.link);
+        console.log(`[Tool] Step 2: Found ${urls.length} URLs, reading in PARALLEL...`);
+
+        // Step 2: Read ALL articles in PARALLEL using Promise.all
+        const startTime = Date.now();
+        const articlePromises = urls.map(url =>
+            scrapeArticle(url, {
+                provider: currentScrapingProvider,
+                maxChars: 8000, // 8000 chars per article (total ~24000 for 3) - MAXIMUM content
+            })
+        );
+
+        // Wait for ALL parallel requests to complete
+        const articles = await Promise.all(articlePromises);
+        const elapsed = Date.now() - startTime;
+        console.log(`[Tool] Step 3: All ${urls.length} articles fetched in ${elapsed}ms (PARALLEL)`);
+
+        // Step 3: Combine results
+        const combined = articles.map((article, i) => {
+            const source = searchResult.results![i];
+            if (article.success && article.content) {
+                const provider = article.provider || 'unknown';
+                return `## Source ${i + 1}: ${source.title}
+URL: ${source.link}
+Provider: ${provider}
+
+${article.content}`;
+            } else {
+                return `## Source ${i + 1}: ${source.title}
+URL: ${source.link}
+⚠️ Failed to read: ${article.error || 'Unknown error'}
+
+Snippet: ${source.snippet}`;
+            }
+        }).join('\n\n---\n\n');
+
+        console.log(`[Tool] Returning combined content from ${articles.filter(a => a.success).length}/${urls.length} sources`);
+        return combined;
     },
 });
 
 /**
- * News Search Tool - Find related news
+ * News Search Tool - Search + Read ALL news in PARALLEL
  * TIER 3: Verify from multiple news sources
- * Now uses multi-search (Serper or SearXNG based on settings)
+ * 
+ * NEW BEHAVIOR:
+ * 1. Searches news sources
+ * 2. Gets top 3 news results  
+ * 3. Reads ALL 3 articles in PARALLEL via Jina AI
+ * 4. Returns combined full content
  */
 export const newsSearchTool = new DynamicStructuredTool({
     name: 'search_news',
-    description: `Search for related news articles. Use ONLY when:
-- Need to verify breaking news from multiple sources
-- Want to check if story is widely reported
-Returns top 3 news results. Use after search_web if needed.`,
+    description: `Search NEWS sources AND read top 3 articles in PARALLEL. TIER 3 alternative.
+
+WHEN TO USE:
+- Need to verify if breaking news is widely reported
+- Want news-specific sources (not general web)
+- Checking story credibility across news outlets
+
+⚠️ QUERY FORMULATION:
+- GOOD: "Pakistan economic reforms January 2026" (specific topic)
+- BAD: "Latest news Pakistan" (too broad)
+
+RETURNS: Full content from 3 news sources (8000 chars each).`,
     schema: z.object({
-        query: z.string().describe('News topic to search'),
+        query: z.string().describe('Specific news topic - be precise about event/topic'),
     }),
     func: async ({ query }) => {
-        console.log(`[Tool] News: ${query}`);
-        const result = await multiSearchNews(query, 3);
-        if (!result.success) return `Error: ${result.error}`;
-        if (!result.results?.length) return 'No news found.';
+        console.log(`[Tool] search_news: "${query}"`);
 
-        return result.results
-            .map((r: { title: string; snippet: string }, i: number) => `${i + 1}. ${r.title}\n   ${r.snippet}`)
-            .join('\n\n');
+        // Step 1: Search news
+        const searchResult = await multiSearchNews(query, 3);
+
+        if (!searchResult.success) {
+            return `News Search Error: ${searchResult.error}`;
+        }
+        if (!searchResult.results?.length) {
+            return 'No news articles found.';
+        }
+
+        // Check if results have URLs (some news APIs don't return full URLs)
+        const resultsWithUrls = searchResult.results.filter((r: { link?: string }) => r.link);
+
+        if (resultsWithUrls.length === 0) {
+            // Fallback to snippets only
+            return searchResult.results
+                .map((r: { title: string; snippet: string }, i: number) =>
+                    `${i + 1}. ${r.title}\n${r.snippet}`
+                ).join('\n\n');
+        }
+
+        const urls = resultsWithUrls.map((r: { link: string }) => r.link);
+        console.log(`[Tool] Found ${urls.length} news URLs, reading in PARALLEL...`);
+
+        // Step 2: Read ALL news articles in PARALLEL
+        const startTime = Date.now();
+        const articlePromises = urls.map((url: string) =>
+            scrapeArticle(url, {
+                provider: currentScrapingProvider,
+                maxChars: 8000, // 8000 chars per article - MAXIMUM content
+            })
+        );
+
+        const articles = await Promise.all(articlePromises);
+        const elapsed = Date.now() - startTime;
+        console.log(`[Tool] All ${urls.length} news articles fetched in ${elapsed}ms (PARALLEL)`);
+
+        // Step 3: Combine results
+        const combined = articles.map((article, i) => {
+            const source = resultsWithUrls[i];
+            if (article.success && article.content) {
+                return `## News ${i + 1}: ${source.title}
+URL: ${source.link}
+
+${article.content}`;
+            } else {
+                return `## News ${i + 1}: ${source.title}
+⚠️ Failed to read full article
+
+Snippet: ${source.snippet || 'No snippet available'}`;
+            }
+        }).join('\n\n---\n\n');
+
+        return combined;
     },
 });
 

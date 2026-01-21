@@ -8,6 +8,7 @@ import { Pinecone } from '@pinecone-database/pinecone';
 const INDEX_NAME = 'agent-knowledge';
 const NAMESPACE_DECISIONS = 'decisions';
 const NAMESPACE_GUIDELINES = 'guidelines';
+const NAMESPACE_ARTICLES = 'articles';  // NEW: For semantic deduplication
 
 interface RAGResponse {
     success: boolean;
@@ -291,4 +292,171 @@ function getDefaultGuidance(query: string): string {
     }
 
     return 'Process efficiently. Minimize API calls. Skip if unsure about credibility.';
+}
+
+// ============= SEMANTIC ARTICLE DEDUPLICATION =============
+
+interface SemanticDuplicateResult {
+    isDuplicate: boolean;
+    similarTitle?: string;
+    similarityScore?: number;
+    hash?: string;
+}
+
+/**
+ * Store an article embedding in Pinecone for future semantic search
+ * Called when a new unique article is added to the feeder
+ */
+export async function storeArticleEmbedding(
+    hash: string,
+    title: string,
+    source: string
+): Promise<void> {
+    try {
+        const pc = getPinecone();
+        const index = pc.index(INDEX_NAME);
+
+        // Create a content string for embedding
+        const content = `${title} - ${source}`;
+
+        await index.namespace(NAMESPACE_ARTICLES).upsert([{
+            id: hash,  // Use hash as unique ID
+            values: await getEmbedding(content),
+            metadata: {
+                title,
+                source,
+                content,
+                storedAt: new Date().toISOString(),
+            },
+        }]);
+
+        console.log(`[RAG] Stored article embedding: ${hash.substring(0, 12)}...`);
+    } catch (error) {
+        console.error('[RAG] Store article error:', error);
+    }
+}
+
+/**
+ * Store multiple articles in batch (more efficient)
+ */
+export async function storeArticleBatch(
+    articles: { hash: string; title: string; source: string }[]
+): Promise<void> {
+    if (articles.length === 0) return;
+
+    try {
+        const pc = getPinecone();
+        const index = pc.index(INDEX_NAME);
+
+        // Generate embeddings for all articles
+        const vectors = await Promise.all(
+            articles.map(async (article) => {
+                const content = `${article.title} - ${article.source}`;
+                return {
+                    id: article.hash,
+                    values: await getEmbedding(content),
+                    metadata: {
+                        title: article.title,
+                        source: article.source,
+                        content,
+                        storedAt: new Date().toISOString(),
+                    },
+                };
+            })
+        );
+
+        await index.namespace(NAMESPACE_ARTICLES).upsert(vectors);
+        console.log(`[RAG] Stored ${articles.length} article embeddings`);
+    } catch (error) {
+        console.error('[RAG] Batch store error:', error);
+    }
+}
+
+/**
+ * Find if an article is a semantic duplicate of any stored article
+ * Uses cosine similarity to detect same story from different sources
+ * 
+ * @param title - The new article title to check
+ * @param source - The source name (for logging)
+ * @param threshold - Similarity threshold (0.85 = 85% similar)
+ * @returns SemanticDuplicateResult with match info
+ */
+export async function findSemanticDuplicate(
+    title: string,
+    source: string,
+    threshold: number = 0.85
+): Promise<SemanticDuplicateResult> {
+    try {
+        const pc = getPinecone();
+        const index = pc.index(INDEX_NAME);
+
+        const content = `${title} - ${source}`;
+
+        const results = await index.namespace(NAMESPACE_ARTICLES).query({
+            topK: 1,
+            includeMetadata: true,
+            vector: await getEmbedding(content),
+        });
+
+        if (!results.matches || results.matches.length === 0) {
+            return { isDuplicate: false };
+        }
+
+        const topMatch = results.matches[0];
+        const similarity = topMatch.score || 0;
+
+        if (similarity >= threshold) {
+            const similarTitle = topMatch.metadata?.title as string || 'Unknown';
+            console.log(`[RAG] Semantic duplicate found (${(similarity * 100).toFixed(1)}%):
+  New: "${title.substring(0, 60)}..."
+  Existing: "${similarTitle.substring(0, 60)}..."`);
+
+            return {
+                isDuplicate: true,
+                similarTitle,
+                similarityScore: similarity,
+                hash: topMatch.id,
+            };
+        }
+
+        return { isDuplicate: false };
+    } catch (error) {
+        console.error('[RAG] Semantic search error:', error);
+        return { isDuplicate: false };  // Fail open - don't block on error
+    }
+}
+
+/**
+ * Check multiple articles for semantic duplicates in batch
+ */
+export async function findSemanticDuplicatesBatch(
+    articles: { title: string; source: string }[],
+    threshold: number = 0.85
+): Promise<Map<string, SemanticDuplicateResult>> {
+    const results = new Map<string, SemanticDuplicateResult>();
+
+    // Process in parallel for speed
+    await Promise.all(
+        articles.map(async (article) => {
+            const result = await findSemanticDuplicate(article.title, article.source, threshold);
+            results.set(article.title, result);
+        })
+    );
+
+    return results;
+}
+
+/**
+ * Get count of stored articles in Pinecone
+ */
+export async function getStoredArticleCount(): Promise<number> {
+    try {
+        const pc = getPinecone();
+        const index = pc.index(INDEX_NAME);
+        const stats = await index.describeIndexStats();
+        return stats.namespaces?.[NAMESPACE_ARTICLES]?.recordCount || 0;
+    } catch (error) {
+        console.error('[RAG] Stats error:', error);
+        return 0;
+    }
 }
