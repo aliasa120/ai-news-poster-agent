@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { Bot, Newspaper, FileText, Settings } from 'lucide-react';
+import { Bot, Newspaper, FileText, Settings, Home, Activity } from 'lucide-react';
 
 interface AppNavbarProps {
     title?: string;
@@ -14,10 +14,12 @@ interface AppNavbarProps {
 }
 
 const NAV_ITEMS = [
-    { href: '/agent', icon: Bot, label: 'Agent' },
-    { href: '/feeder', icon: Newspaper, label: 'Feeder' },
-    { href: '/posts', icon: FileText, label: 'Posts' },
-    { href: '/settings', icon: Settings, label: 'Settings' },
+    { href: '/', icon: Home, label: 'Home', exact: true },
+    { href: '/agent', icon: Bot, label: 'Agent', exact: false },
+    { href: '/agent/monitor', icon: Activity, label: 'Monitor', exact: true },
+    { href: '/feeder', icon: Newspaper, label: 'Feeder', exact: false },
+    { href: '/posts', icon: FileText, label: 'Posts', exact: false },
+    { href: '/settings', icon: Settings, label: 'Settings', exact: false },
 ];
 
 export function AppNavbar({ title = 'AI News Agent', subtitle, icon, isActive }: AppNavbarProps) {
@@ -47,18 +49,29 @@ export function AppNavbar({ title = 'AI News Agent', subtitle, icon, isActive }:
                         </div>
                     </div>
                     <div className="flex items-center gap-1">
-                        {NAV_ITEMS.map((item) => (
-                            <Link key={item.href} href={item.href}>
-                                <Button
-                                    variant={pathname === item.href ? 'secondary' : 'ghost'}
-                                    size="sm"
-                                    className="gap-1.5"
-                                >
-                                    <item.icon className="w-4 h-4" />
-                                    <span className="hidden sm:inline">{item.label}</span>
-                                </Button>
-                            </Link>
-                        ))}
+                        {NAV_ITEMS.map((item) => {
+                            const isActiveRoute = item.exact
+                                ? pathname === item.href
+                                : pathname === item.href || pathname.startsWith(item.href + '/');
+
+                            // Special case: don't highlight Agent when on Monitor
+                            const isActive = item.href === '/agent' && pathname === '/agent/monitor'
+                                ? false
+                                : isActiveRoute;
+
+                            return (
+                                <Link key={item.href} href={item.href}>
+                                    <Button
+                                        variant={isActive ? 'secondary' : 'ghost'}
+                                        size="sm"
+                                        className="gap-1.5"
+                                    >
+                                        <item.icon className="w-4 h-4" />
+                                        <span className="hidden sm:inline">{item.label}</span>
+                                    </Button>
+                                </Link>
+                            );
+                        })}
                         <div className="ml-2 border-l border-border pl-2">
                             <ThemeToggle />
                         </div>

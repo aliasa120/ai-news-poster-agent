@@ -24,6 +24,19 @@ export interface FeederSettings {
     last_fetch: string | null;
     max_retention?: number; // max articles to keep (default 100)
     freshness_hours?: number; // only fetch news from last X hours (1, 2, 6, 12, 24)
+
+    // AI Model Settings
+    ai_provider?: 'groq' | 'cerebras' | 'openai';
+    ai_model?: string;
+
+    // Deep Agent Settings
+    enable_ai_verification?: boolean;
+    max_check_titles?: number;
+    batch_size?: number;
+    include_official_sources?: boolean;
+    include_secondary_sources?: boolean;
+    enable_source_filter?: boolean;
+
     created_at?: string;
     updated_at?: string;
 }

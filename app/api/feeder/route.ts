@@ -1,9 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { parseGoogleNewsFeed } from '@/lib/rss-parser';
-import { filterDuplicates } from '@/lib/deduplication';
 import {
-    getExistingHashes,
-    getExistingTitles,
     insertNewsItems,
     getNewsItems,
     getFeederSettings,
@@ -15,16 +11,25 @@ import {
     deleteProcessedItems,
     enforceRetentionLimit,
     getProcessedCounts,
-    getProcessedHashes,
-    isDuplicateArticle,
-    saveSeenHashes,
 } from '@/lib/feed-store';
-import { findSemanticDuplicate, storeArticleBatch } from '@/lib/agent/tools/pinecone-rag';
+import { parseGoogleNewsFeed } from '@/lib/rss-parser';
+import {
+    isGuidSeen,
+    isHashSeen,
+    getTitlesForVerification,
+    saveGuid,
+    saveHash,
+    saveTitleFull
+} from '@/lib/feeder/permanent-store';
+import { generateNewsHash } from '@/lib/deduplication';
 import { FeedResponse, SettingsResponse, FetchLogsResponse } from '@/lib/types';
+import { checkFuzzyDuplicates } from '@/lib/feeder/fuzzy-matcher';
+import { checkNerDuplicates } from '@/lib/feeder/ner-fingerprint';
+import { checkSemanticDuplicates, saveEmbeddings, deleteAllEmbeddings } from '@/lib/feeder/vector-search';
 
 /**
  * GET: Fetch news items from database only (no RSS fetch)
- * Use query param ?refresh=true to fetch from RSS
+ * Use query param ?refresh=true to fetch from RSS using Deep Agent
  * Use query param ?logs=true to get fetch logs
  */
 export async function GET(request: NextRequest): Promise<NextResponse<FeedResponse | FetchLogsResponse>> {
@@ -50,86 +55,156 @@ export async function GET(request: NextRequest): Promise<NextResponse<FeedRespon
         // Get settings for retention limit and freshness
         const settings = await getFeederSettings();
         const maxRetention = settings?.max_retention || 100;
-        const freshnessHours = settings?.freshness_hours || undefined;
 
         // Only fetch from RSS if refresh=true
-        if (shouldRefresh) {
+        if (shouldRefresh && settings) {
             // 1. Delete processed articles first (cleanup)
             processedDeleted = await deleteProcessedItems();
             console.log(`[Feeder] Deleted ${processedDeleted} processed articles`);
 
-            // 2. Parse the Google News RSS feed (with freshness filter)
-            const feedItems = await parseGoogleNewsFeed(freshnessHours);
-            const totalFetched = feedItems.length;
+            // ============================================
+            // APP LAYER: L1 (GUID) and L2 (Hash) Checks
+            // ============================================
 
-            // 3. Get existing hashes AND processed hashes for enhanced deduplication
-            const existingHashes = await getExistingHashes();
-            const existingTitles = await getExistingTitles();  // NEW: For fuzzy matching
-            const { hashes: processedHashes, titles: processedTitles } = await getProcessedHashes();
+            // Step 0: Fetch RSS from Google News
+            console.log(`[Feeder] Fetching RSS feed...`);
+            const freshness = settings.freshness_hours || 6;
+            const includeSecondary = (settings as any).include_secondary_sources !== false;
+            const includeOfficial = (settings as any).include_official_sources !== false;
 
-            console.log(`[Feeder] Dedup check: ${existingHashes.size} existing hashes, ${existingTitles.length} existing titles, ${processedHashes.size} processed hashes`);
+            const rawArticles = await parseGoogleNewsFeed(freshness, includeSecondary, includeOfficial);
+            console.log(`[Feeder] Fetched ${rawArticles.length} articles from RSS`);
 
-            // 4. Filter out duplicates using 3-layer system
-            // Layer 1: Hash check, Layer 2: Fuzzy title, Layer 3: Semantic (AI)
-            const uniqueItems: typeof feedItems = [];
-            let hashDuplicates = 0;
-            let semanticDuplicates = 0;
-
-            for (const item of feedItems) {
-                // Layer 1 & 2: Hash and Fuzzy check (fast)
-                if (isDuplicateArticle(item, processedHashes, processedTitles, existingHashes, existingTitles)) {
-                    hashDuplicates++;
-                    continue;
+            // Step 1 (Layer 1): GUID Check
+            console.log(`[Feeder] L1: Checking GUIDs...`);
+            const afterGuid = [];
+            for (const article of rawArticles) {
+                const guid = article.link; // Use link as GUID
+                const seen = await isGuidSeen(guid);
+                if (!seen) {
+                    afterGuid.push({ ...article, guid });
                 }
-
-                // Layer 3: Semantic check (AI - slower but more accurate)
-                const semanticResult = await findSemanticDuplicate(
-                    item.title,
-                    item.source_name || 'Unknown',
-                    0.85  // 85% similarity threshold
-                );
-
-                if (semanticResult.isDuplicate) {
-                    semanticDuplicates++;
-                    console.log(`[Feeder] Semantic duplicate skipped: "${item.title.substring(0, 50)}..."`); continue;
-                }
-
-                uniqueItems.push(item);
             }
+            console.log(`[Feeder] L1: ${afterGuid.length}/${rawArticles.length} passed GUID check`);
 
-            duplicatesSkipped = hashDuplicates + semanticDuplicates;
-            console.log(`[Feeder] Dedup results: ${hashDuplicates} hash/fuzzy, ${semanticDuplicates} semantic, ${uniqueItems.length} unique`);
+            // Step 2 (Layer 2): Hash Check
+            console.log(`[Feeder] L2: Checking Hashes...`);
+            const afterHash = [];
+            for (const article of afterGuid) {
+                const hash = generateNewsHash(article.title, article.source_name || 'unknown');
+                const seen = await isHashSeen(hash);
+                if (!seen) {
+                    afterHash.push(article);
+                }
+            }
+            console.log(`[Feeder] L2: ${afterHash.length}/${afterGuid.length} passed Hash check`);
 
-            // 5. Insert new items into database
-            if (uniqueItems.length > 0) {
-                newCount = await insertNewsItems(uniqueItems);
+            // ============================================
+            // AGENT REPLACEMENT: L3, L4, L5 Checks
+            // ============================================
 
-                // 5b. Save hashes to processed_hashes table
-                await saveSeenHashes(uniqueItems.map(item => ({ hash: item.hash!, title: item.title })));
+            if (afterHash.length === 0) {
+                console.log(`[Feeder] No new articles after L1/L2 filtering`);
+            } else {
+                console.log(`[Feeder] Starting Advanced Deduplication (L3-L5) with ${afterHash.length} articles...`);
 
-                // 5c. Store embeddings in Pinecone for future semantic search
-                await storeArticleBatch(uniqueItems.map(item => ({
-                    hash: item.hash!,
+                // Fetch recent titles/articles for comparison
+                const dbItems = await getTitlesForVerification(500);
+
+                // Map to ExistingTitle interface (PermanentTitle uses different field names)
+                const existingItems = dbItems.map(item => ({
+                    id: item.id,
                     title: item.title,
-                    source: item.source_name || 'Unknown'
-                })));
+                    content_snippet: item.description,
+                    source_name: item.source,
+                    pub_date: item.published_at
+                }));
+
+                // --------------------------------------------
+                // L3: Fuzzy Content Match (≥ 75–80%)
+                // Now checks Title + Description
+                // --------------------------------------------
+                const l3Result = checkFuzzyDuplicates(afterHash, existingItems, 0.75);
+
+                console.log(`[Feeder] L3: ${l3Result.unique.length}/${afterHash.length} passed Fuzzy Title check`);
+
+                // --------------------------------------------
+                // L4: NER Fingerprint (Event/Loc/Entity/Date)
+                // --------------------------------------------
+                // We only check self-duplicates within the batch + the unique ones from L3
+                const l4Result = await checkNerDuplicates(l3Result.unique, []);
+
+                console.log(`[Feeder] L4: ${l4Result.unique.length}/${l3Result.unique.length} passed NER Fingerprint check`);
+
+                // --------------------------------------------
+                // L5: Semantic Vector Search (≥ 88%)
+                // --------------------------------------------
+                const l5Result = await checkSemanticDuplicates(l4Result.unique, 0.88);
+
+                console.log(`[Feeder] L5: ${l5Result.unique.length}/${l4Result.unique.length} passed Vector/Semantic check`);
+
+                // --------------------------------------------
+                // FINAL: Save Unique Articles
+                // --------------------------------------------
+                const finalArticles = l5Result.unique;
+                newCount = finalArticles.length;
+
+                if (finalArticles.length > 0) {
+                    console.log(`[Feeder] Saving ${finalArticles.length} unique articles...`);
+
+                    // 1. Save Articles to DB
+                    await insertNewsItems(finalArticles);
+
+                    // 2. Save Metadata to permanent store
+                    // 2. Save Metadata to permanent store
+                    const PermanentStore = await import('@/lib/feeder/permanent-store');
+                    for (const article of finalArticles) {
+                        // Safe casting or non-null assertion for GUID as L1 filtered items have link->guid
+                        if (article.guid) await PermanentStore.saveGuid(article.guid);
+                        const sourceName = article.source_name || 'unknown';
+                        await PermanentStore.saveHash(article.hash, article.title, sourceName);
+
+                        await PermanentStore.saveTitleFull({
+                            title: article.title,
+                            description: article.content_snippet,
+                            source: sourceName,
+                            published_at: article.pub_date || new Date().toISOString()
+                        });
+
+                        // Save Fingerprint if available (L4)
+                        if (article.fingerprint) {
+                            const parts = article.fingerprint.split('|');
+                            if (parts.length === 4) {
+                                await PermanentStore.saveFingerprint(
+                                    article.fingerprint,
+                                    parts[0], // event
+                                    parts[1], // place
+                                    parts[2], // entity
+                                    parts[3]  // date
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // SAVE EMBEDDINGS (L5)
+                await saveEmbeddings(finalArticles);
             }
 
-            // 6. Enforce retention limit (keep only latest X articles)
-            // Articles deleted here will still have their hashes in processed_hashes table
+            // Enforce retention limit (keep only latest X articles)
             retentionTrimmed = await enforceRetentionLimit(maxRetention);
             if (retentionTrimmed > 0) {
                 console.log(`[Feeder] Trimmed ${retentionTrimmed} old articles (retention: ${maxRetention})`);
             }
 
-            // 7. Log the fetch operation
-            await logFetch(totalFetched, newCount, duplicatesSkipped);
+            // Log the fetch operation
+            await logFetch(0, newCount, duplicatesSkipped);
 
-            // 8. Update last fetch time
+            // Update last fetch time
             await updateFeederSettings({ last_fetch: new Date().toISOString() });
         }
 
-        // 9. Get all items from database
+        // Get all items from database
         const allItems = await getNewsItems(200);
         const totalCount = await getNewsCount();
         const counts = await getProcessedCounts();
@@ -195,10 +270,36 @@ export async function POST(request: NextRequest): Promise<NextResponse<SettingsR
 /**
  * DELETE: Delete all news items
  */
-export async function DELETE(): Promise<NextResponse<{ success: boolean; error?: string }>> {
+/**
+ * DELETE: Delete all news items
+ * Query param ?full=true to also clear PERMANENT Deduplication Data (L3/L4/L5)
+ */
+export async function DELETE(request: NextRequest): Promise<NextResponse<{ success: boolean; error?: string; stats?: any }>> {
     try {
+        const searchParams = request.nextUrl.searchParams;
+        const fullWipe = searchParams.get('full') === 'true';
+
+        // 1. Delete transient news items (Feed)
         await deleteAllNewsItems();
-        return NextResponse.json({ success: true });
+
+        let permanentStats = null;
+
+        // 2. If requested, delete PERMANENT data (Hard Reset)
+        if (fullWipe) {
+            console.warn('[Feeder] Performing FULL HARD RESET (Clearing DB, L3, L4, L5)');
+
+            // Clear Permanent Store (L3/L4)
+            const PermanentStore = await import('@/lib/feeder/permanent-store');
+            permanentStats = await PermanentStore.clearAllPermanentData();
+
+            // Clear Pinecone (L5)
+            await deleteAllEmbeddings();
+        }
+
+        return NextResponse.json({
+            success: true,
+            stats: permanentStats
+        });
     } catch (error) {
         console.error('Delete all error:', error);
         return NextResponse.json(

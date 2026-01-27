@@ -385,7 +385,7 @@ export interface ActivityLog {
     message: string;
     article_title?: string;
     tool_name?: string;
-    metadata?: Record<string, unknown>; // Extra data for UI
+    metadata?: Record<string, any>; // Extra data for UI
     created_at?: string;
 }
 
@@ -397,7 +397,8 @@ export async function logActivity(
     type: ActivityLog['type'],
     message: string,
     articleTitle?: string,
-    toolName?: string
+    toolName?: string,
+    metadata?: Record<string, any>
 ): Promise<void> {
     const { error } = await supabase
         .from('agent_activity')
@@ -407,6 +408,7 @@ export async function logActivity(
             message,
             article_title: articleTitle,
             tool_name: toolName,
+            metadata,
         });
 
     if (error) {

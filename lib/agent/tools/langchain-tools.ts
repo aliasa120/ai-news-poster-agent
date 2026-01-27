@@ -42,14 +42,15 @@ WHEN NOT TO USE:
 RETURNS: Full article text (up to 10,000 chars)`,
     schema: z.object({
         url: z.string().describe('The article URL'),
+        provider: z.enum(['jina_api', 'jina_free', 'exa', 'auto']).optional().describe('Scraping provider'),
     }),
-    func: async ({ url }) => {
-        console.log(`[Tool] Reading article: ${url}`);
+    func: async ({ url, provider }) => {
+        console.log(`[Tool] Reading article: ${url} (Provider: ${provider || 'auto'})`);
         const status = getProviderStatus();
         console.log(`[Tool] Provider status - Jina Free: ${status.jina_free.tokens}/20, Jina API: ${status.jina_api.tokens}/200`);
 
         const result = await scrapeArticle(url, {
-            provider: currentScrapingProvider,
+            provider: provider as ScrapingProvider || currentScrapingProvider,
             maxChars: 10000, // About 2500 words - full article content
         });
 
@@ -97,12 +98,17 @@ RETURNS: Full content from 3 different sources (8000 chars each).
 No need to call read_article after - this tool already reads articles!`,
     schema: z.object({
         query: z.string().describe('Specific search query - ask a QUESTION, do NOT copy the article title'),
+        provider: z.enum(['serper', 'searxng', 'auto']).optional().describe('Search provider'),
     }),
-    func: async ({ query }) => {
-        console.log(`[Tool] search_web: "${query}"`);
+    func: async ({ query, provider }) => {
+        console.log(`[Tool] search_web: "${query}" (Provider: ${provider || 'auto'})`);
+
+        if (provider && provider !== 'auto') {
+            setSearchProvider(provider as SearchProvider);
+        }
 
         // Step 1: Search Google
-        console.log(`[Tool] Step 1: Searching Google...`);
+        console.log(`[Tool] Step 1: Searching...`);
         const searchResult = await multiSearch(query, 3);
 
         if (!searchResult.success) {
@@ -112,24 +118,28 @@ No need to call read_article after - this tool already reads articles!`,
             return 'No search results found.';
         }
 
-        const urls = searchResult.results.map(r => r.link);
-        console.log(`[Tool] Step 2: Found ${urls.length} URLs, reading in PARALLEL...`);
-
-        // Step 2: Read ALL articles in PARALLEL using Promise.all
+        // Step 2: Read articles SEQUENTIALLY in order (top 1, top 2, top 3)
+        console.log(`[Tool] Step 2: Reading ${searchResult.results.length} URLs in ORDER...`);
+        const articles: { success: boolean; content?: string; error?: string; provider?: string }[] = [];
         const startTime = Date.now();
-        const articlePromises = urls.map(url =>
-            scrapeArticle(url, {
+
+        for (let i = 0; i < searchResult.results.length; i++) {
+            const source = searchResult.results[i];
+            console.log(`[Tool] Reading #${i + 1}: ${source.link.substring(0, 60)}...`);
+
+            const article = await scrapeArticle(source.link, {
                 provider: currentScrapingProvider,
-                maxChars: 8000, // 8000 chars per article (total ~24000 for 3) - MAXIMUM content
-            })
-        );
+                maxChars: 8000,
+            });
+            articles.push(article);
 
-        // Wait for ALL parallel requests to complete
-        const articles = await Promise.all(articlePromises);
+            console.log(`[Tool] Completed #${i + 1}: ${article.success ? 'OK' : 'FAILED'}`);
+        }
+
         const elapsed = Date.now() - startTime;
-        console.log(`[Tool] Step 3: All ${urls.length} articles fetched in ${elapsed}ms (PARALLEL)`);
+        console.log(`[Tool] Step 3: All ${articles.length} articles read in ORDER (${elapsed}ms)`);
 
-        // Step 3: Combine results
+        // Step 3: Combine results in order
         const combined = articles.map((article, i) => {
             const source = searchResult.results![i];
             if (article.success && article.content) {
@@ -148,7 +158,7 @@ Snippet: ${source.snippet}`;
             }
         }).join('\n\n---\n\n');
 
-        console.log(`[Tool] Returning combined content from ${articles.filter(a => a.success).length}/${urls.length} sources`);
+        console.log(`[Tool] Returning content from ${articles.filter(a => a.success).length}/${articles.length} sources (in order)`);
         return combined;
     },
 });
@@ -179,9 +189,14 @@ WHEN TO USE:
 RETURNS: Full content from 3 news sources (8000 chars each).`,
     schema: z.object({
         query: z.string().describe('Specific news topic - be precise about event/topic'),
+        provider: z.enum(['serper', 'searxng', 'auto']).optional().describe('Search provider'),
     }),
-    func: async ({ query }) => {
-        console.log(`[Tool] search_news: "${query}"`);
+    func: async ({ query, provider }) => {
+        console.log(`[Tool] search_news: "${query}" (Provider: ${provider || 'auto'})`);
+
+        if (provider && provider !== 'auto') {
+            setSearchProvider(provider as SearchProvider);
+        }
 
         // Step 1: Search news
         const searchResult = await multiSearchNews(query, 3);
@@ -205,22 +220,29 @@ RETURNS: Full content from 3 news sources (8000 chars each).`,
         }
 
         const urls = resultsWithUrls.map((r: { link: string }) => r.link);
-        console.log(`[Tool] Found ${urls.length} news URLs, reading in PARALLEL...`);
+        console.log(`[Tool] Reading ${urls.length} news URLs in ORDER...`);
 
-        // Step 2: Read ALL news articles in PARALLEL
+        // Step 2: Read news articles SEQUENTIALLY in order (top 1, top 2, top 3)
+        const articles: { success: boolean; content?: string; error?: string; provider?: string }[] = [];
         const startTime = Date.now();
-        const articlePromises = urls.map((url: string) =>
-            scrapeArticle(url, {
+
+        for (let i = 0; i < resultsWithUrls.length; i++) {
+            const source = resultsWithUrls[i];
+            console.log(`[Tool] Reading news #${i + 1}: ${source.link.substring(0, 60)}...`);
+
+            const article = await scrapeArticle(source.link, {
                 provider: currentScrapingProvider,
-                maxChars: 8000, // 8000 chars per article - MAXIMUM content
-            })
-        );
+                maxChars: 8000,
+            });
+            articles.push(article);
 
-        const articles = await Promise.all(articlePromises);
+            console.log(`[Tool] Completed news #${i + 1}: ${article.success ? 'OK' : 'FAILED'}`);
+        }
+
         const elapsed = Date.now() - startTime;
-        console.log(`[Tool] All ${urls.length} news articles fetched in ${elapsed}ms (PARALLEL)`);
+        console.log(`[Tool] All ${articles.length} news articles read in ORDER (${elapsed}ms)`);
 
-        // Step 3: Combine results
+        // Step 3: Combine results in order
         const combined = articles.map((article, i) => {
             const source = resultsWithUrls[i];
             if (article.success && article.content) {

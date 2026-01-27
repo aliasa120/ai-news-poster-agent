@@ -189,11 +189,15 @@ export async function insertNewsItems(items: NewsItem[]): Promise<number> {
     if (items.length === 0) return 0;
 
     // Mark all items as new and set fetched_at
-    const itemsWithMeta = items.map((item) => ({
-        ...item,
-        is_new: true,
-        fetched_at: new Date().toISOString(),
-    }));
+    // Remove 'guid' and 'fingerprint' as they do not exist in news_items table
+    const itemsWithMeta = items.map((item) => {
+        const { guid, fingerprint, ...rest } = item as any; // Safe cast to remove fields not in DB
+        return {
+            ...rest,
+            is_new: true,
+            fetched_at: new Date().toISOString(),
+        };
+    });
 
     // Use upsert with onConflict to skip duplicates
     const { data, error } = await supabase

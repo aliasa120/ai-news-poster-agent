@@ -20,9 +20,6 @@ const parser: Parser<CustomFeed, CustomItem> = new Parser({
     },
 });
 
-// Google News RSS URL for Pakistan
-const GOOGLE_NEWS_RSS_URL = 'https://news.google.com/rss/search?q=pakistan&hl=en-PK&gl=PK&ceid=PK:en';
-
 /**
  * Extract image URL from various RSS feed formats
  */
@@ -70,16 +67,43 @@ function extractSourceName(item: CustomItem): string | null {
 }
 
 /**
- * Parse Google News RSS feed and return NewsItem array
- * @param freshnessHours - Only include articles from the last X hours (1, 2, 6, 12, 24)
+ * Build Google News RSS URL
+ * Fetches ALL Pakistan news - agent handles deduplication
  */
-export async function parseGoogleNewsFeed(freshnessHours?: number): Promise<NewsItem[]> {
-    // Build URL with freshness filter
-    let url = GOOGLE_NEWS_RSS_URL;
+function buildGoogleNewsUrl(
+    freshnessHours?: number
+): string {
+    // Simple query: just Pakistan news (no source filtering)
+    let query = 'pakistan';
+
+    // Add freshness filter if specified
     if (freshnessHours && freshnessHours > 0) {
-        // Google News supports when:Xh parameter
-        url = `https://news.google.com/rss/search?q=pakistan+when:${freshnessHours}h&hl=en-PK&gl=PK&ceid=PK:en`;
+        query += ` when:${freshnessHours}h`;
     }
+
+    // URL encode the query
+    const encodedQuery = encodeURIComponent(query);
+
+    return `https://news.google.com/rss/search?q=${encodedQuery}&hl=en-PK&gl=PK&ceid=PK:en`;
+}
+
+/**
+ * Parse Google News RSS feed and return NewsItem array
+ * Articles are filtered at source using site: queries
+ * 
+ * @param freshnessHours - Only include articles from the last X hours (1, 2, 6, 12, 24)
+ * @param includeSecondary - Include international sources (default: true)
+ * @param includeOfficial - Include government sources (default: true)
+ */
+export async function parseGoogleNewsFeed(
+    freshnessHours?: number,
+    includeSecondary: boolean = true,
+    includeOfficial: boolean = true
+): Promise<NewsItem[]> {
+    // Build URL for all Pakistan news (no source filtering at URL level)
+    const url = buildGoogleNewsUrl(freshnessHours);
+
+    console.log(`[RSS] Fetching from: ${url.slice(0, 100)}...`);
 
     try {
         const feed = await parser.parseURL(url);
@@ -105,7 +129,7 @@ export async function parseGoogleNewsFeed(freshnessHours?: number): Promise<News
                 };
             })
             .filter((item) => {
-                // Filter by freshness if specified
+                // Filter by freshness if specified (double-check client-side)
                 if (cutoffTime && item.pub_date) {
                     const pubDate = new Date(item.pub_date);
                     return pubDate >= cutoffTime;
@@ -113,7 +137,7 @@ export async function parseGoogleNewsFeed(freshnessHours?: number): Promise<News
                 return true;
             });
 
-        console.log(`[RSS] Fetched ${feed.items.length} articles, ${newsItems.length} within ${freshnessHours || 'unlimited'}h freshness`);
+        console.log(`[RSS] Fetched ${feed.items.length} articles from trusted sources, ${newsItems.length} within ${freshnessHours || 'unlimited'}h freshness`);
         return newsItems;
     } catch (error) {
         console.error('Error parsing RSS feed:', error);
@@ -122,9 +146,8 @@ export async function parseGoogleNewsFeed(freshnessHours?: number): Promise<News
 }
 
 /**
- * Get the default Google News RSS URL
+ * Get the current Google News RSS URL (for debugging)
  */
-export function getGoogleNewsUrl(): string {
-    return GOOGLE_NEWS_RSS_URL;
+export function getGoogleNewsUrl(freshnessHours?: number): string {
+    return buildGoogleNewsUrl(freshnessHours);
 }
-

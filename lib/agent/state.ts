@@ -1,8 +1,29 @@
 /**
  * Agent State Management
  * 
- * Manages global agent state including abort controller and run ID.
+ * Manages global agent state including abort controller, run ID, and LangGraph memory.
+ * 
+ * LangGraph Enhancement:
+ * - MemorySaver provides checkpointing for agent runs
+ * - Thread ID maps to our runId for conversation tracking
  */
+
+import { MemorySaver } from '@langchain/langgraph';
+
+// ============= LANGGRAPH MEMORY =============
+
+/**
+ * LangGraph MemorySaver for checkpointing
+ * This enables:
+ * - Persistent memory across agent steps
+ * - Resumable agent runs
+ * - Conversation history tracking
+ */
+const checkpointer = new MemorySaver();
+
+export function getCheckpointer(): MemorySaver {
+    return checkpointer;
+}
 
 // ============= STATE =============
 
@@ -21,6 +42,18 @@ export function getRunId(): string | null {
 
 export function isAborted(): boolean {
     return currentAbortController?.signal.aborted ?? false;
+}
+
+/**
+ * Get LangGraph config with thread_id for checkpointing
+ * This maps our runId to LangGraph's thread_id
+ */
+export function getLangGraphConfig() {
+    return {
+        configurable: {
+            thread_id: currentRunId || 'default',
+        },
+    };
 }
 
 // ============= SETTERS =============

@@ -34,6 +34,7 @@ export const AVAILABLE_MODELS = [
     { id: 'groq-gpt-oss-120b', name: 'GPT-OSS 120B (Groq)', description: 'Powerful reasoning' },
     { id: 'groq-llama-3.3-70b', name: 'Llama 3.3 70B (Groq)', description: 'Balanced' },
     { id: 'groq-llama-3.1-8b', name: 'Llama 3.1 8B (Groq)', description: 'Fast' },
+    { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B (Groq)', description: 'User Requested' },
     // Cerebras Models (Ultra-fast inference)
     { id: 'cerebras-gpt-oss-120b', name: 'GPT-OSS 120B (Cerebras)', description: '2200 tok/s' },
     { id: 'cerebras-llama-3.3-70b', name: 'Llama 3.3 70B (Cerebras)', description: '1100 tok/s' },
@@ -125,3 +126,37 @@ export interface SerperSearchResponse {
     results?: SerperSearchResult[];
     error?: string;
 }
+
+// ==========================================
+// DEEP AGENT TYPES (New Architecture)
+// ==========================================
+
+export interface PlanStep {
+    id: string;
+    instruction: string;
+    tool?: 'search_web' | 'search_news' | 'read_article' | 'none';
+    status: 'pending' | 'active' | 'completed' | 'failed' | 'skipped';
+    result?: string;
+    reasoning?: string;
+}
+
+export interface AgentPlan {
+    steps: PlanStep[];
+    goal: string;
+    original_query: string;
+}
+
+export interface Reflection {
+    critique: string;
+    score: number; // 1-10
+    suggestions: string[];
+    is_satisfactory: boolean;
+}
+
+export interface StepResult {
+    success: boolean;
+    data: string;
+    error?: string;
+    metadata?: Record<string, any>;
+}
+

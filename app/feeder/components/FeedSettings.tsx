@@ -11,12 +11,13 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import { RefreshCw, Loader2, Clock, Zap, Database, Timer } from 'lucide-react';
+import { RefreshCw, Loader2, Clock, Zap, Database, Timer, Square } from 'lucide-react';
 
 interface FeedSettingsProps {
     settings: FeederSettings | null;
     onSettingsChange: (settings: Partial<FeederSettings>) => void;
     onRefresh: () => void;
+    onStop?: () => void;
     isRefreshing: boolean;
 }
 
@@ -48,10 +49,13 @@ const FRESHNESS_OPTIONS = [
     { value: '24', label: '24h' },
 ];
 
+// AI Provider and Model Options REMOVED (Handled by Backend Agents)
+
 export function FeedSettings({
     settings,
     onSettingsChange,
     onRefresh,
+    onStop,
     isRefreshing,
 }: FeedSettingsProps) {
     const lastFetchTime = settings?.last_fetch
@@ -130,7 +134,7 @@ export function FeedSettings({
                     </div>
 
                     {/* Auto-refresh toggle */}
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 ml-auto md:ml-0">
                         <Zap className={`w-4 h-4 ${settings?.is_active ? 'text-green-500' : 'text-muted-foreground'}`} />
                         <Switch
                             checked={settings?.is_active || false}
@@ -139,29 +143,31 @@ export function FeedSettings({
                     </div>
 
                     {/* Last fetch time */}
-                    <div className="text-xs text-muted-foreground hidden sm:block">
+                    <div className="text-xs text-muted-foreground hidden sm:block ml-auto">
                         Last: <span className="font-medium">{lastFetchTime}</span>
                     </div>
 
-                    {/* Refresh Button */}
-                    <Button
-                        onClick={onRefresh}
-                        disabled={isRefreshing}
-                        size="sm"
-                        className="ml-auto h-8"
-                    >
-                        {isRefreshing ? (
-                            <>
-                                <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                                Fetching...
-                            </>
-                        ) : (
-                            <>
-                                <RefreshCw className="w-4 h-4 mr-1.5" />
-                                Refresh
-                            </>
-                        )}
-                    </Button>
+                    {/* Refresh/Stop Button */}
+                    {isRefreshing ? (
+                        <Button
+                            onClick={onStop}
+                            size="sm"
+                            variant="destructive"
+                            className="ml-auto h-8"
+                        >
+                            <Square className="w-4 h-4 mr-1.5" />
+                            Stop
+                        </Button>
+                    ) : (
+                        <Button
+                            onClick={onRefresh}
+                            size="sm"
+                            className="ml-auto h-8"
+                        >
+                            <RefreshCw className="w-4 h-4 mr-1.5" />
+                            Refresh
+                        </Button>
+                    )}
                 </div>
 
                 {/* Info about settings */}

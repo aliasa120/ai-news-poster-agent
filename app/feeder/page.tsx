@@ -32,6 +32,7 @@ export default function FeederPage() {
     const [historyRefresh, setHistoryRefresh] = useState(0);
 
     const intervalRef = useRef<NodeJS.Timeout | null>(null);
+    const abortControllerRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
         fetchSettings();
@@ -96,11 +97,16 @@ export default function FeederPage() {
     }, []);
 
     const fetchFromRSS = useCallback(async () => {
+        // Create new AbortController for this request
+        abortControllerRef.current = new AbortController();
+
         setIsRefreshing(true);
         setError(null);
 
         try {
-            const res = await fetch('/api/feeder?refresh=true');
+            const res = await fetch('/api/feeder?refresh=true', {
+                signal: abortControllerRef.current.signal,
+            });
             const data: FeedResponse = await res.json();
 
             if (data.success) {
@@ -116,10 +122,23 @@ export default function FeederPage() {
                 setError(data.error || 'Failed to fetch feed');
             }
         } catch (err) {
-            setError('Network error. Please try again.');
-            console.error('Feed fetch error:', err);
+            if (err instanceof Error && err.name === 'AbortError') {
+                console.log('[Feeder] Request cancelled by user');
+                setError('Refresh cancelled');
+            } else {
+                setError('Network error. Please try again.');
+                console.error('Feed fetch error:', err);
+            }
         } finally {
             setIsRefreshing(false);
+            abortControllerRef.current = null;
+        }
+    }, []);
+
+    const handleStopRefresh = useCallback(() => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            console.log('[Feeder] Stopping refresh...');
         }
     }, []);
 
@@ -151,6 +170,24 @@ export default function FeederPage() {
 
     const handleSettingsChange = async (newSettings: Partial<FeederSettings>) => {
         try {
+            // Update optimistically first
+            if (settings) {
+                setSettings({ ...settings, ...newSettings });
+            }
+
+            // If AI settings are being changed, update feeder_settings table
+            if (newSettings.ai_provider !== undefined || newSettings.ai_model !== undefined) {
+                await fetch('/api/feeder/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ai_provider: newSettings.ai_provider,
+                        ai_model: newSettings.ai_model,
+                    }),
+                });
+            }
+
+            // Update legacy settings
             const res = await fetch('/api/feeder', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -170,29 +207,6 @@ export default function FeederPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-blue-950/10">
-            {/* Top Navigation */}
-            <nav className="sticky top-0 z-50 border-b border-border/50 bg-background/60 backdrop-blur-xl">
-                <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex h-16 items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 shadow-lg shadow-blue-500/25">
-                                <Newspaper className="w-6 h-6 text-white" />
-                            </div>
-                            <div>
-                                <h1 className="text-xl font-bold">News Feeder</h1>
-                                <p className="text-xs text-muted-foreground hidden sm:block">Pakistan News • Google RSS</p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <a href="/agent"><Button variant="ghost" size="sm" className="gap-2"><Bot className="w-4 h-4" /><span className="hidden sm:inline">Agent</span></Button></a>
-                            <a href="/posts"><Button variant="ghost" size="sm" className="gap-2"><FileText className="w-4 h-4" /><span className="hidden sm:inline">Posts</span></Button></a>
-                            <a href="/settings"><Button variant="ghost" size="sm" className="gap-2"><Settings className="w-4 h-4" /><span className="hidden sm:inline">Settings</span></Button></a>
-                            <div className="ml-2 border-l border-border pl-2"><ThemeToggle /></div>
-                        </div>
-                    </div>
-                </div>
-            </nav>
-
             {/* Main Content */}
             <main className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
                 {/* Stats Row */}
@@ -254,6 +268,7 @@ export default function FeederPage() {
                             settings={settings}
                             onSettingsChange={handleSettingsChange}
                             onRefresh={fetchFromRSS}
+                            onStop={handleStopRefresh}
                             isRefreshing={isRefreshing}
                         />
 

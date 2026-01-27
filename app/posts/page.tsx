@@ -105,42 +105,19 @@ export default function PostsPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-pink-950/10">
-            {/* Navigation */}
-            <nav className="sticky top-0 z-50 border-b border-border/50 bg-background/60 backdrop-blur-xl">
-                <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex h-16 items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="p-2.5 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 shadow-lg shadow-pink-500/25">
-                                <FileText className="w-6 h-6 text-white" />
-                            </div>
-                            <div>
-                                <h1 className="text-xl font-bold">Generated Posts</h1>
-                                <p className="text-xs text-muted-foreground hidden sm:block">
-                                    {posts.length} posts ready for publishing
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <a href="/agent"><Button variant="ghost" size="sm" className="gap-2"><Bot className="w-4 h-4" /><span className="hidden sm:inline">Agent</span></Button></a>
-                            <a href="/feeder"><Button variant="ghost" size="sm" className="gap-2"><Newspaper className="w-4 h-4" /><span className="hidden sm:inline">Feeder</span></Button></a>
-                            <a href="/settings"><Button variant="ghost" size="sm" className="gap-2"><Settings className="w-4 h-4" /><span className="hidden sm:inline">Settings</span></Button></a>
-                            <div className="border-l border-border pl-2 flex items-center gap-2">
-                                <Button variant="outline" size="sm" onClick={fetchPosts} disabled={isLoading}>
-                                    <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                                    Refresh
-                                </Button>
-                                {posts.length > 0 && (
-                                    <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
-                                        <Trash2 className="w-4 h-4 mr-2" />
-                                        Delete All
-                                    </Button>
-                                )}
-                                <ThemeToggle />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </nav>
+            {/* Top Actions Bar */}
+            <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={fetchPosts} disabled={isLoading}>
+                    <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                </Button>
+                {posts.length > 0 && (
+                    <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete All
+                    </Button>
+                )}
+            </div>
 
             {/* Delete Confirmation Modal */}
             {showDeleteConfirm && (

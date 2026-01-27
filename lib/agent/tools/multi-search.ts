@@ -6,6 +6,7 @@
  */
 
 import { searchGoogle, searchNews } from './serper-search';
+// Imports from SearXNG specific tool
 import { searchWithSearXNG, searchNewsWithSearXNG, isSearXNGAvailable } from './searxng-search';
 import { SerperSearchResponse } from '../types';
 

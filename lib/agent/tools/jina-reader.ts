@@ -38,6 +38,18 @@ export async function readArticleWithKey(url: string): Promise<JinaReaderRespons
 
         const text = await response.text();
 
+        // Log reading activity with metadata
+        const { getRunId } = require('../state');
+        const { logActivity } = require('../store');
+        const runId = getRunId();
+        if (runId) {
+            await logActivity(runId, 'reading', `📖 Read: ${url}`, extractTitle(text), 'Jina Reader', {
+                url,
+                img: `https://logo.clearbit.com/${new URL(url).hostname}`,
+                content_preview: text.substring(0, 50000)
+            });
+        }
+
         return {
             success: true,
             content: text,
@@ -88,6 +100,18 @@ export async function readArticleFree(url: string): Promise<JinaReaderResponse> 
         }
 
         const text = await response.text();
+
+        // Log reading activity with metadata
+        const { getRunId } = require('../state');
+        const { logActivity } = require('../store');
+        const runId = getRunId();
+        if (runId) {
+            await logActivity(runId, 'reading', `📖 Read (Free): ${url}`, extractTitle(text), 'Jina Free', {
+                url,
+                img: `https://logo.clearbit.com/${new URL(url).hostname}`,
+                content_preview: text.substring(0, 50000)
+            });
+        }
 
         return {
             success: true,

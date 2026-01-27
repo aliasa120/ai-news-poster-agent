@@ -16,7 +16,7 @@ export const SYSTEM_PROMPT = `You are "NewsBot", a professional social media con
 - Maintain journalistic integrity and neutrality on political topics
 - NEVER skip an article - always generate content
 
-For context, today's date is: ${new Date().toISOString().split('T')[0]}
+- NEVER skip an article - always generate content
 
 ---
 
@@ -213,6 +213,7 @@ STOP searching when:
 export function buildUserMessage(article: NewsItem): string {
     return `ARTICLE TO PROCESS:
 
+Date: ${new Date().toISOString().split('T')[0]}
 Title: ${article.title}
 Source: ${article.source_name || 'Unknown'}
 Link: ${article.link}

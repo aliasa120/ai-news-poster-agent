@@ -37,11 +37,25 @@ export async function searchGoogle(query: string, numResults: number = 3): Promi
 
         const data = await response.json();
 
-        const results: SerperSearchResult[] = (data.organic || []).map((item: { title?: string; link?: string; snippet?: string }) => ({
-            title: item.title || '',
-            link: item.link || '',
-            snippet: item.snippet || '',
-        }));
+        const results: SerperSearchResult[] = (data.organic || [])
+            .map((item: { title?: string; link?: string; snippet?: string }) => ({
+                title: item.title || '',
+                link: item.link || '',
+                snippet: item.snippet || '',
+            }))
+            .slice(0, numResults);
+
+        // Log search activity with metadata
+        const { getRunId } = require('../state');
+        const { logActivity } = require('../store');
+        const runId = getRunId();
+        if (runId) {
+            await logActivity(runId, 'searching', `🔍 Searched: ${query}`, undefined, 'Serper', {
+                query,
+                results: results.slice(0, 3), // Log top 3 results
+                total_results: results.length
+            });
+        }
 
         return {
             success: true,
@@ -91,11 +105,25 @@ export async function searchNews(query: string, numResults: number = 3): Promise
 
         const data = await response.json();
 
-        const results: SerperSearchResult[] = (data.news || []).map((item: { title?: string; link?: string; snippet?: string }) => ({
-            title: item.title || '',
-            link: item.link || '',
-            snippet: item.snippet || '',
-        }));
+        const results: SerperSearchResult[] = (data.news || [])
+            .map((item: { title?: string; link?: string; snippet?: string }) => ({
+                title: item.title || '',
+                link: item.link || '',
+                snippet: item.snippet || '',
+            }))
+            .slice(0, numResults); // Enforce limit explicitly
+
+        // Log search activity with metadata
+        const { getRunId } = require('../state');
+        const { logActivity } = require('../store');
+        const runId = getRunId();
+        if (runId) {
+            await logActivity(runId, 'searching', `📰 News Search: ${query}`, undefined, 'Serper News', {
+                query,
+                results: results.slice(0, 3), // Log top 3 results
+                total_results: results.length
+            });
+        }
 
         return {
             success: true,

@@ -178,7 +178,7 @@ async function processQueue(runId: string, modelId: string, totalArticles: numbe
         }
 
         try {
-            await processQueueItem(queueItem, article, runId, agent, i, queueItems.length, stats);
+            await processQueueItem(queueItem, article, runId, agent, modelId, i, queueItems.length, stats);
 
             // Update run progress
             await updateAgentRun(runId, {
@@ -205,6 +205,7 @@ async function processQueueItem(
     article: NewsItem,
     runId: string,
     agent: ReturnType<typeof createNewsAgent>,
+    modelId: string,
     index: number,
     total: number,
     stats: ProcessStats
@@ -216,7 +217,7 @@ async function processQueueItem(
     await logActivity(runId, 'step', `📋 Processing ${index + 1}/${total}`, article.title);
 
     // Process article
-    const result = await processArticle(article, queueItem, runId, agent);
+    const result = await processArticle(article, queueItem, runId, agent, modelId);
 
     // Track tier
     stats.tierCounts[`tier${result.tierUsed}` as keyof TierCounts]++;

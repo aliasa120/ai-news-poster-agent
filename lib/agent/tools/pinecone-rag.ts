@@ -348,25 +348,53 @@ export async function storeArticleBatch(
         const pc = getPinecone();
         const index = pc.index(INDEX_NAME);
 
-        // Generate embeddings for all articles
-        const vectors = await Promise.all(
-            articles.map(async (article) => {
-                const content = `${article.title} - ${article.source}`;
-                return {
-                    id: article.hash,
-                    values: await getEmbedding(content),
-                    metadata: {
-                        title: article.title,
-                        source: article.source,
-                        content,
-                        storedAt: new Date().toISOString(),
-                    },
-                };
-            })
-        );
+        // Process in chunks to avoid rate limits and network timeouts
+        const BATCH_SIZE = 5;
+        const vectors = [];
 
-        await index.namespace(NAMESPACE_ARTICLES).upsert(vectors);
-        console.log(`[RAG] Stored ${articles.length} article embeddings`);
+        console.log(`[RAG] Generating embeddings for ${articles.length} articles (batch size: ${BATCH_SIZE})...`);
+
+        for (let i = 0; i < articles.length; i += BATCH_SIZE) {
+            const chunk = articles.slice(i, i + BATCH_SIZE);
+
+            // Allow this chunk to fail without stopping the whole process? 
+            // Better to try/catch inside implementation if needed, but for now let's just batch.
+            const chunkVectors = await Promise.all(
+                chunk.map(async (article) => {
+                    const content = `${article.title} - ${article.source}`;
+                    try {
+                        const values = await getEmbedding(content);
+                        return {
+                            id: article.hash,
+                            values,
+                            metadata: {
+                                title: article.title,
+                                source: article.source,
+                                content,
+                                storedAt: new Date().toISOString(),
+                            },
+                        };
+                    } catch (err) {
+                        console.error(`[RAG] Failed to embed article "${article.title.substring(0, 20)}...":`, err);
+                        return null;
+                    }
+                })
+            );
+
+            // Filter out failed embeddings
+            const validVectors = chunkVectors.filter(v => v !== null) as any[];
+            vectors.push(...validVectors); // Add to specific type if issues arise, but 'any' or correct type works
+
+            // Small delay to be nice to the API/Network
+            if (i + BATCH_SIZE < articles.length) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
+
+        if (vectors.length > 0) {
+            await index.namespace(NAMESPACE_ARTICLES).upsert(vectors);
+            console.log(`[RAG] Stored ${vectors.length}/${articles.length} article embeddings`);
+        }
     } catch (error) {
         console.error('[RAG] Batch store error:', error);
     }
@@ -434,14 +462,31 @@ export async function findSemanticDuplicatesBatch(
     threshold: number = 0.85
 ): Promise<Map<string, SemanticDuplicateResult>> {
     const results = new Map<string, SemanticDuplicateResult>();
+    const BATCH_SIZE = 5;
 
-    // Process in parallel for speed
-    await Promise.all(
-        articles.map(async (article) => {
-            const result = await findSemanticDuplicate(article.title, article.source, threshold);
-            results.set(article.title, result);
-        })
-    );
+    console.log(`[RAG] Checking synonyms for ${articles.length} articles (batch size: ${BATCH_SIZE})...`);
+
+    // Process in chunks
+    for (let i = 0; i < articles.length; i += BATCH_SIZE) {
+        const chunk = articles.slice(i, i + BATCH_SIZE);
+
+        await Promise.all(
+            chunk.map(async (article) => {
+                try {
+                    const result = await findSemanticDuplicate(article.title, article.source, threshold);
+                    results.set(article.title, result);
+                } catch (err) {
+                    console.error(`[RAG] Failed to check duplicate for "${article.title.substring(0, 20)}..."`, err);
+                    results.set(article.title, { isDuplicate: false }); // Fail open
+                }
+            })
+        );
+
+        // Small delay to be nice to the API/Network
+        if (i + BATCH_SIZE < articles.length) {
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
+    }
 
     return results;
 }

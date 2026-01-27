@@ -262,39 +262,6 @@ export default function AgentPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-background via-background to-violet-950/10">
-            {/* Navbar */}
-            <nav className="sticky top-0 z-50 border-b border-border/50 bg-background/60 backdrop-blur-xl">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6">
-                    <div className="flex h-16 items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="relative">
-                                <div className="p-2.5 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 shadow-lg shadow-violet-500/25">
-                                    <Bot className="w-6 h-6 text-white" />
-                                </div>
-                                {isRunning && (
-                                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                                        <span className="animate-ping absolute h-full w-full rounded-full bg-green-400 opacity-75" />
-                                        <span className="relative rounded-full h-3 w-3 bg-green-500" />
-                                    </span>
-                                )}
-                            </div>
-                            <div>
-                                <h1 className="text-xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">AI News Agent</h1>
-                                <p className="text-xs text-muted-foreground">
-                                    {isRunning ? `Processing ${processedCount}/${totalArticles || '...'}` :
-                                        processedCount > 0 ? `Last run: ${processedCount} articles` : 'Ready to generate'}
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Link href="/posts"><Button variant="ghost" size="sm" className="gap-2"><FileText className="w-4 h-4" /><span className="hidden sm:inline">Posts</span></Button></Link>
-                            <Link href="/feeder"><Button variant="ghost" size="sm" className="gap-2"><Newspaper className="w-4 h-4" /><span className="hidden sm:inline">Feeder</span></Button></Link>
-                            <Link href="/settings"><Button variant="ghost" size="sm" className="gap-2"><Settings className="w-4 h-4" /><span className="hidden sm:inline">Settings</span></Button></Link>
-                            <div className="ml-2 border-l border-border pl-2"><ThemeToggle /></div>
-                        </div>
-                    </div>
-                </div>
-            </nav>
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
                 {error && (
